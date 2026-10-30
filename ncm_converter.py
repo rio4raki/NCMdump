@@ -44,11 +44,13 @@ def set_mp3_meta(mp3_file, meta_data, cover_data):
     if audio.tags is None:
         audio.tags = ID3()
 
+    # 删除已存在的封面
+    audio.tags.delall('APIC')
     if cover_data:
         mime_type = 'image/jpeg'
         if cover_data.startswith(b'\x89PNG\r\n\x1a\n'):
             mime_type = 'image/png'
-        audio.tags.add(APIC(encoding=3, mime=mime_type, type=3, desc='Cover', data=cover_data))
+        audio.tags.add(APIC(encoding=0, mime=mime_type, type=3, desc='Cover', data=cover_data))  # encoding=0以兼容默认的ID3v2.3格式
 
     if meta_data:
         audio.tags.add(TIT2(encoding=3, text=meta_data.get('musicName', 'Unknown')))
@@ -56,7 +58,8 @@ def set_mp3_meta(mp3_file, meta_data, cover_data):
         artists = '/'.join(arr[0] for arr in meta_data.get('artist', [['Unknown']]))
         audio.tags.add(TPE1(encoding=3, text=artists))
     
-    audio.save()
+    # 使用v2_version=3明确指定保存为ID3v2.3，保证兼容性，对于TIT2等帧的encoding=3，mutagen会自动将其转为v2.3兼容的UTF-16(encoding=1)
+    audio.save(v2_version=3)
 
 def set_flac_meta(flac_file, meta_data, cover_data):
     """为 FLAC 文件写入元数据和封面"""
@@ -198,6 +201,7 @@ def load_config():
     config.read(CONFIG_FILE, encoding='utf-8')
     delete = config.getboolean('Settings', 'delete_on_completion', fallback=False)
     output_dir = config.get('Settings', 'output_directory', fallback='converted_music').strip() or 'converted_music'
+    input_dir = config.get('Settings', 'input_directory', fallback='ncm_files').strip() or 'ncm_files'
     
     try:
         max_workers = config.getint('Settings', 'max_workers')
@@ -206,13 +210,12 @@ def load_config():
     except (ValueError, configparser.NoOptionError):
         max_workers = os.cpu_count() or 1
 
-    return delete, output_dir, max_workers
+    return delete, output_dir, input_dir, max_workers
 
 # --- 主函数 ---
 def main():
     """主执行函数"""
-    input_dir = "ncm_files"
-    delete_original, output_dir, max_workers = load_config()
+    delete_original, output_dir, input_dir, max_workers = load_config()
 
     Path(input_dir).mkdir(exist_ok=True)
     Path(output_dir).mkdir(exist_ok=True)
